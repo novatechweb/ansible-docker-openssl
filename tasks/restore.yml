@@ -2,11 +2,24 @@
 # file: roles/docker-openssl/tasks/restore.yaml
 
 # *****************************************************************************
+# Setup the directory where the backup and restore is to take place
+
+- name: restore dir
+  file:
+    state: directory
+    path: '{{ openssl_docker_restore_dir }}'
+    owner: root
+    group: tape
+    mode: 'u=rwx,g=rwx,o=rx'
+    recurse: no
+    setype: svirt_sandbox_file_t
+
+# *****************************************************************************
 # Get data from tape
 
 - name: exists - openssl archive
   stat:
-    path: '{{ host_openssl_docker_restore_dir }}{{ openssl_backup_file }}'
+    path: '{{ openssl_docker_restore_dir }}{{ openssl_backup_file }}'
     get_checksum: False
     get_md5: False
   register: st_openssl_backup_file
@@ -22,7 +35,7 @@
 
 - name: Set permissions for data-volume data
   file:
-    path: '{{ host_openssl_docker_restore_dir }}{{ openssl_backup_file }}'
+    path: '{{ openssl_docker_restore_dir }}{{ openssl_backup_file }}'
     state: touch
     owner: root
     group: root
@@ -30,7 +43,7 @@
 
 - name: exists - openssl archive
   stat:
-    path: '{{ host_openssl_docker_restore_dir }}{{ openssl_backup_file }}'
+    path: '{{ openssl_docker_restore_dir }}{{ openssl_backup_file }}'
     get_checksum: False
     get_md5: False
   register: st_openssl_backup_file
@@ -39,15 +52,27 @@
 # restore the archive
 
 - name: extract archive
-  shell: "cat {{ host_openssl_docker_restore_dir }}{{ openssl_backup_file }} | docker run -i --rm --volumes-from {{ openssl_dv_name }} {{ openssl_image_name }}:{{ docker_image_tag }} extract"
-  when: st_openssl_backup_file.stat.exists == True
+  docker_container:
+    command: ['extract', '{{ openssl_docker_restore_dir }}/{{ openssl_backup_file }}']
+    detach: False
+    image: '{{ openssl_image_name }}:{{ docker_image_tag }}'
+    name: openssl_restore
+    volumes:
+      - '{{ openssl_docker_restore_dir }}{{ openssl_backup_file }}:{{ openssl_docker_restore_dir }}{{ openssl_backup_file }}:z'
+      - '{{ openssl_dv_name }}:/etc/ssl/private:z'
+
+- name: extract archive
+  docker_container:
+    name: openssl_restore
+    state: absent
+
 
 # *****************************************************************************
 # cleanup
 
 - name: remove - openssl archive
   file:
-    path: '{{ host_openssl_docker_restore_dir }}'
+    path: '{{ openssl_docker_restore_dir }}'
     state: absent
 
 - name: State file
